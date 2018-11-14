@@ -31,8 +31,8 @@ export default declare(({
 `);
 
   const exportSVG = template(`
-var SVG_NAME = function SVG_NAME(props) { return SVG_CODE; };
-export { SVG_NAME };
+  var SVG_NAME = function SVG_NAME(props) { return SVG_CODE; };
+  export { SVG_NAME };
 `);
 
   const exportSVGwithDefaults = template(`
