@@ -1,19 +1,24 @@
-import { extname, dirname, parse as parseFilename } from "path";
-import { readFileSync } from "fs";
-import { parse } from "@babel/parser";
-import { declare } from "@babel/helper-plugin-utils";
-import resolve from "resolve";
+import { extname, dirname, parse as parseFilename } from 'path';
+import { readFileSync } from 'fs';
+import { parse } from '@babel/parser';
+import { declare } from '@babel/helper-plugin-utils';
+import resolve from 'resolve';
 
-import optimize from "./optimize";
-import escapeBraces from "./escapeBraces";
-import transformSvg from "./transformSvg";
-import fileExistsWithCaseSync from "./fileExistsWithCaseSync";
-import { hyphenToCamel } from "./camelize";
-import capitalize from "./capitalize";
+import optimize from './optimize';
+import escapeBraces from './escapeBraces';
+import transformSvg from './transformSvg';
+import fileExistsWithCaseSync from './fileExistsWithCaseSync';
+import { hyphenToCamel } from './camelize';
+import capitalize from './capitalize';
 
 let ignoreRegex;
 
-export default declare(({ assertVersion, template, traverse, types: t }) => {
+export default declare(({
+  assertVersion,
+  template,
+  traverse,
+  types: t,
+}) => {
   assertVersion(7);
 
   const buildSvg = template(`
@@ -26,8 +31,8 @@ export default declare(({ assertVersion, template, traverse, types: t }) => {
 `);
 
   const exportSVG = template(`
-  var SVG_NAME = function SVG_NAME(props) { return SVG_CODE; };
-  export { SVG_NAME };
+var SVG_NAME = function SVG_NAME(props) { return SVG_CODE; };
+export { SVG_NAME };
 `);
 
   const exportSVGwithDefaults = template(`
@@ -35,21 +40,14 @@ export default declare(({ assertVersion, template, traverse, types: t }) => {
   SVG_NAME.defaultProps = SVG_DEFAULT_PROPS_CODE;
   export { SVG_NAME };
 `);
-  function applyPlugin(
-    importIdentifier,
-    importPath,
-    path,
-    state,
-    defaultExport
-  ) {
-    if (typeof importPath !== "string") {
-      throw new TypeError("`applyPlugin` `importPath` must be a string");
+  function isDefaultExportNode(node) {
+    return node.specifiers.length > 0 && node.specifiers[0].local.name === 'default';
+  }
+  function applyPlugin(importIdentifier, importPath, path, state, isExport) {
+    if (typeof importPath !== 'string') {
+      throw new TypeError('`applyPlugin` `importPath` must be a string');
     }
-    const {
-      ignorePattern,
-      caseSensitive,
-      filename: providedFilename
-    } = state.opts;
+    const { ignorePattern, caseSensitive, filename: providedFilename } = state.opts;
     const { file, filename } = state;
     if (ignorePattern) {
       // Only set the ignoreRegex once:
@@ -60,39 +58,34 @@ export default declare(({ assertVersion, template, traverse, types: t }) => {
       }
     }
     // This plugin only applies for SVGs:
-    if (extname(importPath) === ".svg") {
+    if (extname(importPath) === '.svg') {
       const iconPath = filename || providedFilename;
       const svgPath = resolve.sync(importPath, { basedir: dirname(iconPath) });
       if (caseSensitive && !fileExistsWithCaseSync(svgPath)) {
-        throw new Error(
-          `File path didn't match case of file on disk: ${svgPath}`
-        );
+        throw new Error(`File path didn't match case of file on disk: ${svgPath}`);
       }
       if (!svgPath) {
         throw new Error(`File path does not exist: ${importPath}`);
       }
-      const rawSource = readFileSync(svgPath, "utf8");
-      const optimizedSource =
-        state.opts.svgo === false
-          ? rawSource
-          : optimize(rawSource, state.opts.svgo);
+      const rawSource = readFileSync(svgPath, 'utf8');
+      const optimizedSource = state.opts.svgo === false
+        ? rawSource
+        : optimize(rawSource, state.opts.svgo);
 
       const escapeSvgSource = escapeBraces(optimizedSource);
 
       const parsedSvgAst = parse(escapeSvgSource, {
-        sourceType: "module",
-        plugins: ["jsx"]
+        sourceType: 'module',
+        plugins: ['jsx'],
       });
 
       traverse(parsedSvgAst, transformSvg(t));
 
-      const svgCode = traverse.removeProperties(
-        parsedSvgAst.program.body[0].expression
-      );
+      const svgCode = traverse.removeProperties(parsedSvgAst.program.body[0].expression);
 
       const opts = {
         SVG_NAME: importIdentifier,
-        SVG_CODE: svgCode
+        SVG_CODE: svgCode,
       };
 
       // Move props off of element and into defaultProps
@@ -100,13 +93,11 @@ export default declare(({ assertVersion, template, traverse, types: t }) => {
         const keepProps = [];
         const defaultProps = [];
 
-        svgCode.openingElement.attributes.forEach(prop => {
-          if (prop.type === "JSXSpreadAttribute") {
+        svgCode.openingElement.attributes.forEach((prop) => {
+          if (prop.type === 'JSXSpreadAttribute') {
             keepProps.push(prop);
           } else {
-            defaultProps.push(
-              t.objectProperty(t.identifier(prop.name.name), prop.value)
-            );
+            defaultProps.push(t.objectProperty(t.identifier(prop.name.name), prop.value));
           }
         });
 
@@ -115,16 +106,14 @@ export default declare(({ assertVersion, template, traverse, types: t }) => {
       }
 
       if (opts.SVG_DEFAULT_PROPS_CODE) {
-        const svgReplacement = defaultExport
-          ? exportSVGwithDefaults(opts)
-          : buildSvgWithDefaults(opts);
+        const svgReplacement = isExport ? exportSVGwithDefaults(opts) : buildSvgWithDefaults(opts);
         path.replaceWithMultiple(svgReplacement);
       } else {
-        const svgReplacement = defaultExport ? exportSVG(opts) : buildSvg(opts);
+        const svgReplacement = isExport ? exportSVG(opts) : buildSvg(opts);
         path.replaceWith(svgReplacement);
       }
-      file.get("ensureReact")();
-      file.set("ensureReact", () => {});
+      file.get('ensureReact')();
+      file.set('ensureReact', () => {});
     }
   }
 
@@ -132,53 +121,29 @@ export default declare(({ assertVersion, template, traverse, types: t }) => {
     visitor: {
       Program: {
         enter({ scope, node }, { file, opts, filename }) {
-          if (
-            typeof filename === "string" &&
-            typeof opts.filename !== "undefined"
-          ) {
-            throw new TypeError(
-              'the "filename" option may only be provided when transforming code'
-            );
+          if (typeof filename === 'string' && typeof opts.filename !== 'undefined') {
+            throw new TypeError('the "filename" option may only be provided when transforming code');
           }
-          if (
-            typeof filename === "undefined" &&
-            typeof opts.filename !== "string"
-          ) {
-            throw new TypeError(
-              'the "filename" option is required when transforming code'
-            );
+          if (typeof filename === 'undefined' && typeof opts.filename !== 'string') {
+            throw new TypeError('the "filename" option is required when transforming code');
           }
-          if (!scope.hasBinding("React")) {
-            const reactImportDeclaration = t.importDeclaration(
-              [t.importDefaultSpecifier(t.identifier("React"))],
-              t.stringLiteral("react")
-            );
+          if (!scope.hasBinding('React')) {
+            const reactImportDeclaration = t.importDeclaration([
+              t.importDefaultSpecifier(t.identifier('React')),
+            ], t.stringLiteral('react'));
 
-            file.set("ensureReact", () => {
-              node.body.unshift(reactImportDeclaration);
-            });
+            file.set('ensureReact', () => { node.body.unshift(reactImportDeclaration); });
           } else {
-            file.set("ensureReact", () => {});
+            file.set('ensureReact', () => {});
           }
-        }
+        },
       },
       CallExpression(path, state) {
         const { node } = path;
         const requireArg = node.arguments.length > 0 ? node.arguments[0] : null;
-        const filePath = t.isStringLiteral(requireArg)
-          ? requireArg.value
-          : null;
-        if (
-          node.callee.name === "require" &&
-          t.isVariableDeclarator(path.parent) &&
-          filePath
-        ) {
-          applyPlugin(
-            path.parent.id,
-            filePath,
-            path.parentPath.parentPath,
-            state
-          );
+        const filePath = t.isStringLiteral(requireArg) ? requireArg.value : null;
+        if (node.callee.name === 'require' && t.isVariableDeclarator(path.parent) && filePath) {
+          applyPlugin(path.parent.id, filePath, path.parentPath.parentPath, state);
         }
       },
       ImportDeclaration(path, state) {
@@ -189,19 +154,13 @@ export default declare(({ assertVersion, template, traverse, types: t }) => {
       },
       ExportNamedDeclaration(path, state) {
         const { node } = path;
-        if (
-          node.specifiers.length > 0 &&
-          node.specifiers[0].local.name === "default"
-        ) {
+        if (isDefaultExportNode(node)) {
           const exportName = node.specifiers[0].exported.name;
           const filename = parseFilename(node.source.value).name;
-          const componentName =
-            exportName === "default"
-              ? capitalize(hyphenToCamel(filename))
-              : exportName;
+          const componentName = exportName === 'default' ? capitalize(hyphenToCamel(filename)) : exportName;
           applyPlugin(componentName, node.source.value, path, state, true);
         }
-      }
-    }
+      },
+    },
   };
 });
