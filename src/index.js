@@ -21,28 +21,28 @@ export default declare(({
 }) => {
   assertVersion(7);
 
-  const buildSvg = template(`
+  const buildSvg = ({ IS_EXPORT, ...opts }) => {
+    const { SVG_NAME } = opts;
+    if(IS_EXPORT){
+      return SVG_NAME ? template(`
+      var SVG_NAME = function SVG_NAME(props) { return SVG_CODE; };
+      export { SVG_NAME }
+      `)(opts) : template(`
+      
+      `)
+    }
+    template(`
   var SVG_NAME = function SVG_NAME(props) { return SVG_CODE; };
-`);
+  ${IS_EXPORT ? 'export { SVG_NAME }' : ''}
+  `)(opts)
+  );
 
-  const buildSvgWithDefaults = template(`
+  const buildSvgWithDefaults = ({ IS_EXPORT, ...opts }) => (template(`
   var SVG_NAME = function SVG_NAME(props) { return SVG_CODE; };
   SVG_NAME.defaultProps = SVG_DEFAULT_PROPS_CODE;
-`);
+  ${IS_EXPORT ? 'export { SVG_NAME }' : ''}
+`)(opts));
 
-  const exportSVG = template(`
-  var SVG_NAME = function SVG_NAME(props) { return SVG_CODE; };
-  export { SVG_NAME };
-`);
-
-  const exportSVGwithDefaults = template(`
-  var SVG_NAME = function SVG_NAME(props) { return SVG_CODE; };
-  SVG_NAME.defaultProps = SVG_DEFAULT_PROPS_CODE;
-  export { SVG_NAME };
-`);
-  function isDefaultExportNode(node) {
-    return node.specifiers.length > 0 && node.specifiers[0].local.name === 'default';
-  }
   function applyPlugin(importIdentifier, importPath, path, state, isExport) {
     if (typeof importPath !== 'string') {
       throw new TypeError('`applyPlugin` `importPath` must be a string');
@@ -86,6 +86,7 @@ export default declare(({
       const opts = {
         SVG_NAME: importIdentifier,
         SVG_CODE: svgCode,
+        IS_EXPORT: isExport,
       };
 
       // Move props off of element and into defaultProps
@@ -106,10 +107,10 @@ export default declare(({
       }
 
       if (opts.SVG_DEFAULT_PROPS_CODE) {
-        const svgReplacement = isExport ? exportSVGwithDefaults(opts) : buildSvgWithDefaults(opts);
+        const svgReplacement = buildSvgWithDefaults(opts);
         path.replaceWithMultiple(svgReplacement);
       } else {
-        const svgReplacement = isExport ? exportSVG(opts) : buildSvg(opts);
+        const svgReplacement = buildSvg(opts);
         path.replaceWith(svgReplacement);
       }
       file.get('ensureReact')();
@@ -154,7 +155,7 @@ export default declare(({
       },
       ExportNamedDeclaration(path, state) {
         const { node } = path;
-        if (isDefaultExportNode(node)) {
+        if (node.specifiers.length > 0 && node.specifiers[0].local.name === 'default') {
           const exportName = node.specifiers[0].exported.name;
           const filename = parseFilename(node.source.value).name;
           const componentName = exportName === 'default' ? capitalize(hyphenToCamel(filename)) : exportName;
